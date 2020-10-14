@@ -1,4 +1,8 @@
+const schema = 'dbo'
+
 const database = 'mybank'
+
+const configTable = 'blockchain_config'
 
 const indexPath = 'C:\\bigchain\\index.js'
 
@@ -22,7 +26,9 @@ const parametrization = [
 ]
 
 module.exports = {
-    database,
+	schema,
+	database,
+	configTable,
     indexPath,
     parametrization
 }

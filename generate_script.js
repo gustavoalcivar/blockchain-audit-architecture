@@ -1,5 +1,5 @@
 fs = require('fs')
-const { database, indexPath, parametrization } = require('./config')
+const { schema, database, configTable, indexPath, parametrization } = require('./config')
 
 let data = `
 use ${database}
@@ -17,6 +17,13 @@ GO
 -- To update the currently configured value for this feature.
 RECONFIGURE
 GO
+
+IF OBJECT_ID('${database}.${schema}.${configTable}') IS NULL
+ BEGIN
+	create table ${schema}.${configTable}(active bit)
+	insert into ${schema}.${configTable} values(1)
+ END
+GO
 `
 parametrization.forEach(table => {
 	let strInsertDelete = '{'
@@ -31,36 +38,41 @@ parametrization.forEach(table => {
 	data = data + `
 	IF OBJECT_ID ('${table.table}_trigger', 'TR') IS NOT NULL
 	BEGIN
-	DROP TRIGGER dbo.${table.table}_trigger
+	DROP TRIGGER ${schema}.${table.table}_trigger
 	END
 	GO
-	CREATE TRIGGER dbo.${table.table}_trigger
-	ON dbo.${table.table}
-	 AFTER INSERT, UPDATE, DELETE AS
-	 BEGIN
-		declare @transaction nvarchar(4000)
-		declare @data nvarchar(4000)
-		declare @cmd nvarchar(4000)
-		
-		if exists (Select * from inserted) and not exists(Select * from deleted)
-		begin
-			set @transaction = 'INSERT'
-			select @data = concat('${strInsertDelete}') from inserted;
-		end
-		if exists(SELECT * from inserted) and exists (SELECT * from deleted)
-		begin
-			set @transaction = 'UPDATE'
-			select @data = concat('${strUpdate}') from inserted, deleted;
-		end
-		If exists(select * from deleted) and not exists(Select * from inserted)
-		begin
-			set @transaction = 'DELETE'
-			select @data = concat('${strInsertDelete}') from deleted;
-		end
-		set @cmd = 'node ${indexPath} ${database} ${table.table} ' + @transaction + ' ' + SYSTEM_USER + ' ' + @data
-		EXEC Master..xp_cmdshell @cmd
-	 END
-	 GO
+	CREATE TRIGGER ${schema}.${table.table}_trigger
+	ON ${schema}.${table.table}
+	AFTER INSERT, UPDATE, DELETE AS
+	BEGIN
+		IF EXISTS (SELECT 1 FROM ${configTable} WHERE active = 1)
+		BEGIN
+			declare @transaction nvarchar(4000)
+			declare @data nvarchar(4000)
+			declare @cmd nvarchar(4000)
+			
+			if exists (Select * from inserted) and not exists(Select * from deleted)
+			begin
+				set @transaction = 'INSERT'
+				select @data = concat('${strInsertDelete}') from inserted;
+			end
+			if exists(SELECT * from inserted) and exists (SELECT * from deleted)
+			begin
+				set @transaction = 'UPDATE'
+				select @data = concat('${strUpdate}') from inserted, deleted;
+			end
+			If exists(select * from deleted) and not exists(Select * from inserted)
+			begin
+				set @transaction = 'DELETE'
+				select @data = concat('${strInsertDelete}') from deleted;
+			end
+			set @cmd = 'node ${indexPath} ${database} ${table.table} ' + @transaction + ' ' + SYSTEM_USER + ' ' + @data
+			EXEC Master..xp_cmdshell @cmd
+		END
+	END
+	GO
+	print 'Trigger ${schema}.${table.table}_trigger created successfully'
+	GO
 	`
 })
 
